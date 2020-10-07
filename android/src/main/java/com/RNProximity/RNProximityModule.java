@@ -6,8 +6,10 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.support.annotation.Nullable;
 import android.util.Log;
+import android.media.AudioManager;
+
+import androidx.annotation.Nullable;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -26,37 +28,34 @@ public class RNProximityModule extends ReactContextBaseJavaModule implements Sen
   private static final String KEY_PROXIMITY = "proximity";
   private static final String KEY_DISTANCE = "distance";
   private static final String KEY_EVENT_ON_SENSOR_CHANGE = "EVENT_ON_SENSOR_CHANGE";
-  private static final String EVENT_ON_SENSOR_CHANGE = "onSensorChanged";
+  private static final String EVENT_ON_SENSOR_CHANGE = "ProximityStateDidChange";
   private final ReactApplicationContext reactContext;
 
   private SensorManager mSensorManager;
   private Sensor mProximity;
+  private AudioManager mAudioManager;
 
   public RNProximityModule(ReactApplicationContext reactContext) {
     super(reactContext);
     this.reactContext = reactContext;
-    mSensorManager = (SensorManager) reactContext.getSystemService(Context.SENSOR_SERVICE);
+    mAudioManager = (AudioManager) reactContext.getSystemService(reactContext.AUDIO_SERVICE);
+    mSensorManager = (SensorManager)reactContext.getSystemService(Context.SENSOR_SERVICE);
     mProximity = mSensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
   }
 
   public void sendEvent(String eventName, @Nullable WritableMap params) {
-    if (this.reactContext.hasActiveCatalystInstance()) {
-      this.reactContext
-              .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-              .emit(eventName, params);
-    } else {
-      Log.i(TAG, "Waiting for CatalystInstance");
+    this.reactContext
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+            .emit(eventName, params);
+  }
+
+  @ReactMethod
+  public void proximityEnabled(boolean enabled) {
+    if (enabled){
+      mSensorManager.registerListener(this, mProximity, SensorManager.SENSOR_DELAY_NORMAL);
+    }else {
+      mSensorManager.unregisterListener(this);
     }
-  }
-
-  @ReactMethod
-  public void addListener() {
-    mSensorManager.registerListener(this, mProximity, SensorManager.SENSOR_DELAY_NORMAL);
-  }
-
-  @ReactMethod
-  public void removeListener() {
-    mSensorManager.unregisterListener(this);
   }
 
   @Override
@@ -78,6 +77,14 @@ public class RNProximityModule extends ReactContextBaseJavaModule implements Sen
     double distance = sensorEvent.values[0];
     double maximumRange = mProximity.getMaximumRange();
     boolean isNearDevice = distance < maximumRange;
+
+    if (isNearDevice) {
+      mAudioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+      mAudioManager.setSpeakerphoneOn(false);
+    } else {
+      mAudioManager.setMode(AudioManager.MODE_NORMAL);
+      mAudioManager.setSpeakerphoneOn(true);
+    }
 
     params.putBoolean(KEY_PROXIMITY, isNearDevice);
     params.putDouble(KEY_DISTANCE, distance);
